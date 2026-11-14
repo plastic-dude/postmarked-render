@@ -1,0 +1,41 @@
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      tag:   {description: "release tag holding payload.tar.enc", required: true}
+      epdir: {description: "episode dir, e.g. ep04/v3", required: true}
+      parts: {description: "JSON list of [a,b] frame ranges, or [\"ephead\"],[\"endcard\"]", required: true}
+jobs:
+  part:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        p: ${{ fromJSON(github.event.inputs.parts) }}
+    steps:
+      - name: deps
+        run: |
+          sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null
+          python3 -m venv /tmp/venv && /tmp/venv/bin/pip -q install numpy pillow
+      - name: payload
+        env: {KEY: "${{ secrets.RENDER_KEY }}", GH_TOKEN: "${{ github.token }}"}
+        run: |
+          gh release download "${{ github.event.inputs.tag }}" -R "${{ github.repository }}" -p payload.tar.enc -D /tmp
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:KEY -in /tmp/payload.tar.enc | sudo tar -x -C /
+          sudo chown -R $USER /workspace
+          sudo mkdir -p /workspace/work/tts/venv/bin && sudo ln -sf /tmp/venv/bin/python /workspace/work/tts/venv/bin/python
+      - name: render
+        env: {KEY: "${{ secrets.RENDER_KEY }}"}
+        run: |
+          cd /workspace/work/saga/postmarked/${{ github.event.inputs.epdir }}
+          P='${{ toJSON(matrix.p) }}'
+          A=$(python3 -c "import json,sys;p=json.loads(sys.argv[1]);print(p[0])" "$P")
+          B=$(python3 -c "import json,sys;p=json.loads(sys.argv[1]);print(p[1] if len(p)>1 else '')" "$P")
+          if [ -n "$B" ]; then N=core_$(printf %05d $A); python3 -c "print()" >/dev/null; /tmp/venv/bin/python film.py core $A $B /tmp/$N.mp4
+          else N=$A; /tmp/venv/bin/python film.py $A /tmp/$N.mp4; fi
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -pass env:KEY -in /tmp/$N.mp4 -out /tmp/$N.mp4.enc
+          echo "N=$N" >> $GITHUB_ENV
+      - uses: actions/upload-artifact@v4
+        with: {name: "${{ env.N }}", path: "/tmp/${{ env.N }}.mp4.enc", retention-days: 3}
