@@ -1,2 +1,2 @@
 # postmarked-render
-Render runner (payloads encrypted)
+Compute-only runner. Payloads and outputs are encrypted; nothing here is usable without the key.
