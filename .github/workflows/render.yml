@@ -2,7 +2,7 @@ name: render
 on:
   workflow_dispatch:
     inputs:
-      tag:   {description: "release tag holding payload.tar.enc", required: true}
+      tag:   {description: "Drive file id of payload.tar.enc", required: true}
       epdir: {description: "episode dir, e.g. ep04/v3", required: true}
       parts: {description: "JSON list of [a,b] frame ranges, or [\"ephead\"],[\"endcard\"]", required: true}
 jobs:
@@ -20,9 +20,10 @@ jobs:
           sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null
           python3 -m venv /tmp/venv && /tmp/venv/bin/pip -q install numpy pillow
       - name: payload
-        env: {KEY: "${{ secrets.RENDER_KEY }}", GH_TOKEN: "${{ github.token }}"}
+        env: {KEY: "${{ secrets.RENDER_KEY }}"}
         run: |
-          gh release download "${{ github.event.inputs.tag }}" -R "${{ github.repository }}" -p payload.tar.enc -D /tmp
+          curl -sSL -o /tmp/payload.tar.enc "https://drive.usercontent.google.com/download?id=${{ github.event.inputs.tag }}&export=download&confirm=t"
+          ls -la /tmp/payload.tar.enc
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:KEY -in /tmp/payload.tar.enc | sudo tar -x -C /
           sudo chown -R $USER /workspace
           sudo mkdir -p /workspace/work/tts/venv/bin && sudo ln -sf /tmp/venv/bin/python /workspace/work/tts/venv/bin/python
